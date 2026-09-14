@@ -1179,6 +1179,22 @@ class AirisBot(
     }
 
     /**
+     * getUpdatesRaw — same as [getUpdates] but returns raw JSON elements.
+     * Used by [com.airis.api.polling.LongPolling] to decode updates one by one,
+     * so a single malformed update can't wedge the whole polling loop.
+     * @return List<JsonElement> raw update objects
+     */
+    suspend fun getUpdatesRaw(offset: Long? = null, limit: Long? = null, timeout: Long? = null, allowedUpdates: List<String>? = null): List<JsonElement> {
+        val files = mutableMapOf<String, ApiClient.FilePayload>()
+        val p = mutableMapOf<String, JsonElement>()
+        if (offset != null) p["offset"] = JsonPrimitive(offset)
+        if (limit != null) p["limit"] = JsonPrimitive(limit)
+        if (timeout != null) p["timeout"] = JsonPrimitive(timeout)
+        if (allowedUpdates != null) p["allowed_updates"] = TelegramJson.encodeToJsonElement(ListSerializer(String.serializer()), allowedUpdates)
+        return api.call("getUpdates", p, files, ListSerializer(JsonElement.serializer()))
+    }
+
+    /**
      * getUserChatBoosts — Use this method to get the list of boosts added to a chat by a user. Requires administrator rights in the chat. Returns a UserChatBoosts object.
      * @return UserChatBoosts
      */

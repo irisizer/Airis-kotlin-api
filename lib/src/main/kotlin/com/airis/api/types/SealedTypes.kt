@@ -324,6 +324,11 @@ sealed interface RichText
 
 object RichTextSerializer : JsonContentPolymorphicSerializer<RichText>(RichText::class) {
     override fun selectDeserializer(element: JsonElement): kotlinx.serialization.DeserializationStrategy<RichText> {
+        // Bot API: RichText = String (plain) | Array<RichText> | object
+        // (https://core.telegram.org/bots/api#richtext). Plain spans arrive
+        // as bare strings — without this the whole getUpdates batch fails.
+        if (element is JsonPrimitive) return RichTextPlain.serializer() as kotlinx.serialization.DeserializationStrategy<RichText>
+        if (element is JsonArray) return RichTextArray.serializer() as kotlinx.serialization.DeserializationStrategy<RichText>
         val obj = element as? JsonObject ?: throw IllegalArgumentException("Expected JsonObject for RichText")
         val disc = obj["type"]?.jsonPrimitive?.contentOrNull
         return when (disc) {

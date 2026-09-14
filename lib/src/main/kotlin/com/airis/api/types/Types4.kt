@@ -1,8 +1,18 @@
 package com.airis.api.types
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Telegram Bot API 10.3 types (part 4/4).
@@ -107,6 +117,58 @@ data class RichTextAnchorLink(
     @SerialName("anchor_name")
     val anchorName: String
 ) : RichText
+
+/**
+ * Plain-text span: on the wire RichText can be a bare String
+ * (https://core.telegram.org/bots/api#richtext — "a String for plain text").
+ * Custom serializer reads/writes the raw string (not an object).
+ */
+@Serializable(with = RichTextPlainSerializer::class)
+data class RichTextPlain(
+    val text: String
+) : RichText
+
+object RichTextPlainSerializer : KSerializer<RichTextPlain> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RichTextPlain", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: RichTextPlain) {
+        encoder.encodeString(value.text)
+    }
+
+    override fun deserialize(decoder: Decoder): RichTextPlain {
+        require(decoder is JsonDecoder)
+        return RichTextPlain(decoder.decodeJsonElement().jsonPrimitive.content)
+    }
+}
+
+/**
+ * Nested span list: on the wire RichText can be an Array of RichText
+ * (https://core.telegram.org/bots/api#richtext). Decoded recursively.
+ */
+@Serializable(with = RichTextArraySerializer::class)
+data class RichTextArray(
+    val items: List<RichText>
+) : RichText
+
+object RichTextArraySerializer : KSerializer<RichTextArray> {
+    override val descriptor: SerialDescriptor =
+        SerialDescriptor("RichTextArray", kotlinx.serialization.builtins.ListSerializer(RichTextSerializer).descriptor)
+
+    override fun serialize(encoder: Encoder, value: RichTextArray) {
+        require(encoder is JsonEncoder)
+        encoder.encodeJsonElement(
+            JsonArray(value.items.map { encoder.json.encodeToJsonElement(RichTextSerializer, it) })
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): RichTextArray {
+        require(decoder is JsonDecoder)
+        val arr = decoder.decodeJsonElement() as? JsonArray
+            ?: throw IllegalArgumentException("Expected JsonArray for RichText")
+        return RichTextArray(arr.map { decoder.json.decodeFromJsonElement(RichTextSerializer, it) })
+    }
+}
 
 @Serializable
 data class RichTextBankCardNumber(

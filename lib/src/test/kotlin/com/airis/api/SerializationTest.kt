@@ -68,3 +68,84 @@ class SerializationTest {
         assertTrue(b is MessageOrTrue.OfBoolean)
     }
 }
+
+class RichTextShapesTest {
+    // Bot API: RichText = String (plain) | Array<RichText> | object.
+    // Regression: bare strings used to kill the whole getUpdates batch.
+    @Test
+    fun testRichTextPlainString() {
+        val el = TelegramJson.decodeFromString(
+            RichText.serializer(), """"plain span""""
+        )
+        assertTrue(el is RichTextPlain)
+        assertEquals("plain span", (el as RichTextPlain).text)
+    }
+
+    @Test
+    fun testRichTextArray() {
+        val el = TelegramJson.decodeFromString(
+            RichText.serializer(), """["a", {"type": "bold", "text": "b"}]"""
+        )
+        assertTrue(el is RichTextArray)
+        val items = (el as RichTextArray).items
+        assertEquals(2, items.size)
+        assertTrue(items[0] is RichTextPlain)
+        assertTrue(items[1] is RichTextBold)
+    }
+
+    @Test
+    fun testCallbackWithRichPanel() {
+        //Like the real 03:13 incident: callback_query.message carries rich_message
+        // with plain-string spans — must parse, not wedge polling.
+        val json = """{"update_id":9,"callback_query":{"id":"cb1","from":{"id":1,"is_bot":false,"first_name":"T"},"chat_instance":"x","data":"richmode_classic","message":{"message_id":5,"date":1726000000,"chat":{"id":-1001,"type":"supergroup"},"rich_message":{"blocks":[{"type":"paragraph","text":["line1",{"type":"bold","text":"line2"}]}]}}}}"""
+        val u = TelegramJson.decodeFromString(Update.serializer(), json)
+        assertEquals("richmode_classic", u.callbackQuery?.data)
+        val msg = u.callbackQuery?.message as? Message
+        assertTrue(msg?.richMessage != null)
+    }
+}
+
+class ButtonStyleTest {
+    // style/icon_custom_emoji_id обязаны уходить на провод как есть.
+    @Test
+    fun testInlineButtonStyleAndIcon() {
+        val b = InlineKeyboardButton(
+            text = "Hide",
+            callbackData = "hide",
+            style = "danger",
+            iconCustomEmojiId = "5310132169978326164"
+        )
+        val json = TelegramJson.encodeToString(InlineKeyboardButton.serializer(), b)
+        assertTrue(json.contains("\"style\":\"danger\""), json)
+        assertTrue(json.contains("\"icon_custom_emoji_id\":\"5310132169978326164\""), json)
+        assertTrue(json.contains("\"callback_data\":\"hide\""), json)
+        // round-trip
+        val back = TelegramJson.decodeFromString(InlineKeyboardButton.serializer(), json)
+        assertEquals("danger", back.style)
+        assertEquals("5310132169978326164", back.iconCustomEmojiId)
+    }
+
+    @Test
+    fun testAllButtonStyles() {
+        for (s in listOf("danger", "success", "primary")) {
+            val b = InlineKeyboardButton(text = "T", callbackData = "d", style = s)
+            val json = TelegramJson.encodeToString(InlineKeyboardButton.serializer(), b)
+            assertTrue(json.contains("\"style\":\"$s\""), json)
+        }
+        // KeyboardButton (reply) — те же поля
+        val kb = KeyboardButton(text = "T", style = "success")
+        val kbJson = TelegramJson.encodeToString(KeyboardButton.serializer(), kb)
+        assertTrue(kbJson.contains("\"style\":\"success\""), kbJson)
+    }
+}
+
+class GuestModeTest {
+    // Guest Mode (Bot API 10.0): guest_message + answerGuestQuery.
+    @Test
+    fun testGuestMessageUpdate() {
+        val json = """{"update_id":7,"guest_message":{"message_id":3,"date":1726000000,"chat":{"id":-1001,"type":"supergroup"},"from":{"id":42,"is_bot":false,"first_name":"G"},"text":"hi","guest_query_id":"gq1"}}"""
+        val u = TelegramJson.decodeFromString(Update.serializer(), json)
+        assertEquals("gq1", u.guestMessage?.guestQueryId)
+        assertEquals("hi", u.guestMessage?.text)
+    }
+}
