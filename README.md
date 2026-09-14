@@ -67,4 +67,4 @@ dependencies {
 
 ## Лицензия
 
-[LICENSE](MIT)
+[MIT](LICENSE)
